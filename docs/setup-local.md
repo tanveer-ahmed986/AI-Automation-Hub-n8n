@@ -204,6 +204,19 @@ just restores a clean demo state, use `scripts/demo-reset.sh` /
   any change under `apps/dashboard` or `packages/*` — the image is a
   built standalone Next.js output, not a volume-mounted dev server:
   `docker compose up -d --build dashboard`.
+- **A rebuild silently ships stale CSS/JS despite `--build` or even
+  `--no-cache`**: observed on Docker Desktop for Windows after several
+  rapid successive rebuilds — the compiled output kept matching an old
+  build (verified by comparing the compiled CSS chunk's content hash
+  across builds; `--no-cache` alone did not change it). A full
+  `docker builder prune -af` (clears BuildKit's build-cache store, not
+  just image layers) before the next `--build` resolved it. If a visual
+  change isn't showing up after a rebuild and a hard browser refresh,
+  suspect this before suspecting the source change itself — compare the
+  compiled chunk filename in `docker compose exec dashboard sh -c "find
+  /repo/apps/dashboard/.next/static/chunks -name '*.css'"` against a
+  local `pnpm --filter=dashboard run build` (much faster feedback loop
+  for isolating whether the issue is in the source or in Docker's cache).
 - **`getaddrinfo ENOTFOUND postgres`** running a script from the host: see
   step 6's `DATABASE_URL` override.
 - **A workflow's HTTP node shows a broken credential after import**: see
