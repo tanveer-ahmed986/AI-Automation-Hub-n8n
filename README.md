@@ -46,10 +46,12 @@ active.
 
 | Doc | Covers |
 |---|---|
+| [`docs/project-documentation.md`](./docs/project-documentation.md) | The complete project document — overview, features, architecture, stack, screenshots, and a links to everything else below |
 | [`docs/architecture.md`](./docs/architecture.md) | System diagram, the n8n-orchestrator/Next.js-business-logic split and why, request flow per workflow |
 | [`docs/workflow-catalog.md`](./docs/workflow-catalog.md) | Node-by-node detail for each of the four n8n workflows |
 | [`docs/setup-local.md`](./docs/setup-local.md) | The real, verified steps to bring the stack up from zero, including n8n's manual first-run setup |
 | [`docs/testing.md`](./docs/testing.md) | What's unit/integration-tested, current pass/fail counts, how to run it |
+| [`docs/manual-testing-guide.md`](./docs/manual-testing-guide.md) | A hands-on, click-through functional walkthrough you can follow and record for a showcase video |
 | [`docs/security.md`](./docs/security.md) | Network isolation, secret handling, data minimization, the manual data-deletion procedure, and this version's documented approval-surface limitation |
 | [`docs/runbook.md`](./docs/runbook.md) | Operator guide: what each Execution Log failure classification means and how to recover |
 | [`docs/portfolio-demo-script.md`](./docs/portfolio-demo-script.md) | A scripted walkthrough for a recorded demo, using only fictional data |
