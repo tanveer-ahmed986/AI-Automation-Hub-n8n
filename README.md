@@ -18,6 +18,9 @@ see **Known limitations** below before treating it as one.
 
 ![Demo: lead review → AI analysis → approve & send → execution log](./docs/demo/zt-automation-hub-demo.gif)
 
+**[▶ Watch the narrated version (MP4, ~2 min, with voiceover)](./docs/demo/zt-automation-hub-demo-narrated.mp4)**
+— same walkthrough, narrated. Script: [`docs/demo/narration-script.md`](./docs/demo/narration-script.md).
+
 ## Quick start
 
 ```bash

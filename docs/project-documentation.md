@@ -91,8 +91,11 @@ Execution Log — recorded directly from the running dashboard with fictional se
 ![Demo](./demo/zt-automation-hub-demo.gif)
 
 Every click in it is real, not staged: the lead shown, its AI analysis, and the resulting
-`delivery` event in the Execution Log are the actual output of the live stack. For a hands-on
-version you can run (and record) yourself, see `docs/manual-testing-guide.md`.
+`delivery` event in the Execution Log are the actual output of the live stack. A narrated version
+with voiceover is also available: **[`docs/demo/zt-automation-hub-demo-narrated.mp4`](./demo/zt-automation-hub-demo-narrated.mp4)**
+(script: [`docs/demo/narration-script.md`](./demo/narration-script.md)) — produced entirely
+offline (local text-to-speech, `ffmpeg`), with no footage uploaded to any third party. For a
+hands-on version you can run (and record) yourself, see `docs/manual-testing-guide.md`.
 
 ## 5. Screenshots
 
