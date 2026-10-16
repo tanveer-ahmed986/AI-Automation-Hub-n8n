@@ -1,0 +1,320 @@
+{
+  "name": "WF-02 - Approval and Email Delivery",
+  "nodes": [
+    {
+      "id": "webhook-trigger",
+      "name": "Approval Action Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.2,
+      "position": [-500, 0],
+      "notes": "Internal-only trigger (research.md §4 / contracts/n8n-webhooks.md) — called by the dashboard's server-side approve/edit-and-approve/reject action, never by a browser or third party. Header-auth protected by the same shared internal secret as every /api/internal/* call.",
+      "webhookId": "wf02-approval-action",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "approval-action",
+        "responseMode": "responseNode",
+        "authentication": "headerAuth",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ubpcreyVQu2wUYW1",
+          "name": "Internal API Secret"
+        }
+      }
+    },
+    {
+      "id": "if-is-reject",
+      "name": "Is Reject?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [-260, 0],
+      "notes": "`reject` is always terminal (FR-019) and never reaches /email/send — kept as its own branch rather than a third `/approve` result so that endpoint's response stays exactly `approved | stale_version_rejected | already_sent`.",
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is-reject",
+              "leftValue": "={{ $json.body.action }}",
+              "rightValue": "reject",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "http-reject",
+      "name": "Call /drafts/{id}/reject",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [-20, -150],
+      "notes": "Version-checked atomic transition lives behind this call (packages/business-rules/src/approval.ts) — this node does not re-implement the staleness/terminal-state rules.",
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'http://dashboard:3000/api/internal/drafts/' + $json.body.draftId + '/reject' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ draftVersion: $json.body.draftVersion, reviewerIdentity: $json.body.reviewerIdentity || null }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ubpcreyVQu2wUYW1",
+          "name": "Internal API Secret"
+        }
+      }
+    },
+    {
+      "id": "respond-reject-branch",
+      "name": "Respond - Reject Outcome",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [220, -150],
+      "notes": "result is rejected, stale_version_rejected, or already_sent — reject never implies a send, so mock is always reported false here.",
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"result\": $json.body.result, \"mock\": false } }}",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    },
+    {
+      "id": "http-approve",
+      "name": "Call /drafts/{id}/approve",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [-20, 150],
+      "notes": "Covers both approve and edit-and-approve — the dashboard action creates the new ReplyDraft version (if any) before calling this webhook, so by this point draftId/draftVersion always identify the exact version to approve (FR-017).",
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'http://dashboard:3000/api/internal/drafts/' + $json.body.draftId + '/approve' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ draftVersion: $json.body.draftVersion, reviewerIdentity: $json.body.reviewerIdentity || null }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ubpcreyVQu2wUYW1",
+          "name": "Internal API Secret"
+        }
+      }
+    },
+    {
+      "id": "if-approved",
+      "name": "Approved?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [220, 150],
+      "notes": "This is the concrete mechanism behind FR-017/FR-023 — a stale_version_rejected or already_sent result MUST stop here and never reach /email/send.",
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "approve-result-approved",
+              "leftValue": "={{ $json.body.result }}",
+              "rightValue": "approved",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "http-email-send",
+      "name": "Call /email/send",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [460, 50],
+      "notes": "Bounded retry with backoff on transient failure (FR-025) is configured at this node level (retryOnFail/maxTries/waitBetweenTries) per research.md §4 — n8n owns step-level retry/backoff, the route itself only guarantees a retry can never cause a second send (atomic claim in markDraftSent).",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "parameters": {
+        "method": "POST",
+        "url": "http://dashboard:3000/api/internal/email/send",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ draftId: $('Approval Action Webhook').item.json.body.draftId, draftVersion: $('Approval Action Webhook').item.json.body.draftVersion }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ubpcreyVQu2wUYW1",
+          "name": "Internal API Secret"
+        }
+      }
+    },
+    {
+      "id": "respond-sent",
+      "name": "Respond - Send Outcome",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [700, 50],
+      "notes": "status is sent, already_sent, or rejected_stale_version from /email/send — never represents a mock send as a real one (mock passes through unmodified).",
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"result\": $json.body.status, \"mock\": $json.body.mock } }}",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    },
+    {
+      "id": "respond-not-sent",
+      "name": "Respond - Approval Outcome",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [460, 300],
+      "notes": "result is stale_version_rejected or already_sent — /email/send is never called on this branch.",
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"result\": $json.body.result, \"mock\": false } }}",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Approval Action Webhook": {
+      "main": [
+        [
+          {
+            "node": "Is Reject?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Reject?": {
+      "main": [
+        [
+          {
+            "node": "Call /drafts/{id}/reject",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Call /drafts/{id}/approve",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call /drafts/{id}/reject": {
+      "main": [
+        [
+          {
+            "node": "Respond - Reject Outcome",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call /drafts/{id}/approve": {
+      "main": [
+        [
+          {
+            "node": "Approved?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approved?": {
+      "main": [
+        [
+          {
+            "node": "Call /email/send",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond - Approval Outcome",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call /email/send": {
+      "main": [
+        [
+          {
+            "node": "Respond - Send Outcome",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "YeFyZdpuMbhtC7IH"
+  }
+}

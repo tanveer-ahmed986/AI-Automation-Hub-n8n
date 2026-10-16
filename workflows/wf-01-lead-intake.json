@@ -1,0 +1,210 @@
+{
+  "name": "WF-01 - Lead Intake and Qualification",
+  "nodes": [
+    {
+      "id": "webhook-trigger",
+      "name": "Lead Intake Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.2,
+      "position": [-400, 0],
+      "notes": "Public, externally-reachable trigger (FR-001). Body is forwarded close to unmodified to the internal API, which owns all validation (FR-002/FR-007).",
+      "webhookId": "wf01-lead-intake",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lead-intake",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "http-intake",
+      "name": "Call /leads/intake",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [-160, 0],
+      "notes": "Validation, normalization, dedup, and persistence all happen behind this call (research.md §4) — this node does not re-implement any of that logic.",
+      "parameters": {
+        "method": "POST",
+        "url": "http://dashboard:3000/api/internal/leads/intake",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Forwarded-For",
+              "value": "={{ $json.headers['x-forwarded-for'] }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ubpcreyVQu2wUYW1",
+          "name": "Internal API Secret"
+        }
+      }
+    },
+    {
+      "id": "if-intake-accepted",
+      "name": "Intake Accepted?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [60, 0],
+      "notes": "400 from /leads/intake means a validation failure — no lead was created, and this workflow must not call /analyze (constitution Principle II: validation failures are never silently proceeded past).",
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "intake-ok",
+              "leftValue": "={{ $json.statusCode }}",
+              "rightValue": 200,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "http-analyze",
+      "name": "Call /leads/{id}/analyze",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [280, -100],
+      "notes": "AI adapter call (mock by default), schema validation, and draft creation all happen behind this call — a failed/malformed AI result still returns HTTP 200 with analysisStatus: failed_manual_review, it is never represented as a successful analysis.",
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'http://dashboard:3000/api/internal/leads/' + $json.body.leadId + '/analyze' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": false,
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ubpcreyVQu2wUYW1",
+          "name": "Internal API Secret"
+        }
+      }
+    },
+    {
+      "id": "respond-accepted",
+      "name": "Respond - Received",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [500, -100],
+      "notes": "Never returns the AI analysis, score, or draft content — those are reviewer-only, surfaced in the dashboard (research.md §4 / n8n-webhooks.md).",
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"status\": \"received\", \"reference\": $('Call /leads/intake').item.json.body.leadId } }}",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    },
+    {
+      "id": "respond-rejected",
+      "name": "Respond - Rejected",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [280, 150],
+      "notes": "Safe, human-readable validation message only — never the API's internal error detail verbatim, never a stack trace (FR-002).",
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"status\": \"rejected\", \"message\": $json.body.error || \"Invalid submission.\" } }}",
+        "options": {
+          "responseCode": 400
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Lead Intake Webhook": {
+      "main": [
+        [
+          {
+            "node": "Call /leads/intake",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call /leads/intake": {
+      "main": [
+        [
+          {
+            "node": "Intake Accepted?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Intake Accepted?": {
+      "main": [
+        [
+          {
+            "node": "Call /leads/{id}/analyze",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond - Rejected",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call /leads/{id}/analyze": {
+      "main": [
+        [
+          {
+            "node": "Respond - Received",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "YeFyZdpuMbhtC7IH"
+  }
+}

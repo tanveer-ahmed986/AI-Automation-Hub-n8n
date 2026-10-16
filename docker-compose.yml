@@ -1,0 +1,145 @@
+name: ai-automation-hub
+
+services:
+  postgres:
+    image: postgres:18.6
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      N8N_DB_NAME: ${N8N_DB_NAME}
+    volumes:
+      # Postgres 18's official image expects a single mount at
+      # /var/lib/postgresql (not .../data) so it can place data in a
+      # major-version-specific subdirectory for pg_upgrade compatibility —
+      # see https://github.com/docker-library/postgres/pull/1259.
+      - postgres-data:/var/lib/postgresql
+      - ./database/init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - automation-hub
+
+  n8n:
+    image: n8nio/n8n:2.43.5
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_PORT: "5432"
+      DB_POSTGRESDB_DATABASE: ${N8N_DB_NAME}
+      DB_POSTGRESDB_USER: ${POSTGRES_USER}
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD}
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+      # N8N_BASIC_AUTH_* (SPEC.md §11's suggested variables) is a no-op on
+      # the installed n8n 2.43.5 — verified live: it ships its own user-
+      # management system (email + password owner account, REST
+      # `userManagement.authenticationMethod: "email"`) instead of HTTP
+      # basic auth. Complete the first-run owner-account setup at
+      # http://localhost:5678 before this editor is anything but publicly
+      # readable on whatever host/network can reach this port — see
+      # docs/security.md.
+      N8N_HOST: localhost
+      N8N_PORT: "5678"
+      N8N_PROTOCOL: http
+      # WEBHOOK_URL is deprecated as of this installed version in favor of
+      # N8N_WEBHOOK_URL (confirmed via this image's own startup deprecation
+      # notice, not assumed).
+      N8N_WEBHOOK_URL: ${N8N_BASE_URL}/
+      GENERIC_TIMEZONE: UTC
+      # Coarse, instance-wide defense-in-depth cap (n8n's Webhook node has
+      # no per-request byte limit of its own, verified live). MB
+      # granularity only — the precise, configurable byte-level cap from
+      # WEBHOOK_MAX_BODY_BYTES is enforced at the internal API (FR-007).
+      N8N_PAYLOAD_SIZE_MAX: "1"
+      # NOT an env var here: workflow expressions cannot read $env by
+      # default on this installed version (verified live —
+      # "ExpressionError: access to env vars denied"), and embedding the
+      # secret as a literal in node parameters would commit it to
+      # version control. Instead, every workflow calling the internal API
+      # authenticates via a stored "Internal API Secret" credential
+      # (type: HTTP Header Auth, header name X-Internal-Api-Secret, value
+      # = this deployment's INTERNAL_API_SECRET) — create it once via the
+      # n8n editor or REST API; see docs/setup-local.md.
+    ports:
+      - "127.0.0.1:${N8N_HOST_PORT:-5678}:5678"
+    volumes:
+      - n8n-data:/home/node/.n8n
+      - ./workflows:/workflows:ro
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:5678/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+    networks:
+      - automation-hub
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: apps/dashboard/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      APP_ENV: ${APP_ENV}
+      DEMO_MODE: ${DEMO_MODE}
+      MOCK_AI: ${MOCK_AI}
+      MOCK_EMAIL: ${MOCK_EMAIL}
+      APP_BASE_URL: ${APP_BASE_URL}
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET}
+      # Literal Docker-network address of the n8n service (not a secret) —
+      # the dashboard calls WF-02's webhook from its approve/reject server
+      # actions (research.md §4). Same network, same service name n8n's
+      # own workflows already use for the reverse direction.
+      N8N_INTERNAL_BASE_URL: http://n8n:5678
+      AI_PROVIDER: ${AI_PROVIDER}
+      AI_API_KEY: ${AI_API_KEY}
+      AI_MODEL: ${AI_MODEL}
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER}
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      EMAIL_FROM: ${EMAIL_FROM}
+      REVIEWER_EMAIL: ${REVIEWER_EMAIL}
+      FOLLOWUP_MAX_ATTEMPTS: ${FOLLOWUP_MAX_ATTEMPTS}
+      FOLLOWUP_DELAY_HOURS: ${FOLLOWUP_DELAY_HOURS}
+      WEBHOOK_RATE_LIMIT_PER_MINUTE: ${WEBHOOK_RATE_LIMIT_PER_MINUTE}
+      WEBHOOK_MAX_BODY_BYTES: ${WEBHOOK_MAX_BODY_BYTES}
+      DEDUP_WINDOW_HOURS: ${DEDUP_WINDOW_HOURS}
+    ports:
+      - "127.0.0.1:${DASHBOARD_HOST_PORT:-3000}:3000"
+    healthcheck:
+      # 127.0.0.1, not localhost: this Alpine image resolves "localhost"
+      # to ::1 first, but Next's standalone server only binds IPv4
+      # (verified live — wget to "localhost" got connection-refused while
+      # 127.0.0.1 succeeded).
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:3000/api/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+    networks:
+      - automation-hub
+
+networks:
+  automation-hub:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  n8n-data:

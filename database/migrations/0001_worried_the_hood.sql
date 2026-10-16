@@ -1,0 +1,2 @@
+ALTER TABLE "follow_up" ADD COLUMN "draft_id" uuid;--> statement-breakpoint
+ALTER TABLE "follow_up" ADD CONSTRAINT "follow_up_draft_id_reply_draft_id_fk" FOREIGN KEY ("draft_id") REFERENCES "public"."reply_draft"("id") ON DELETE no action ON UPDATE no action;

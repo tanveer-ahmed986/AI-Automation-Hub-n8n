@@ -1,0 +1,136 @@
+{
+  "name": "WF-03 - Follow-up Scheduler",
+  "nodes": [
+    {
+      "id": "schedule-trigger",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-700, 0],
+      "notes": "Periodic sweep (research.md §4) — every run both cancels any follow-up whose lead has since closed/opted-out/replied (FR-027) and, for anything past the configured delay, creates the next reviewable draft (FR-026/FR-028). All of that logic lives behind /followups/due, not in this workflow.",
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 1
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "http-followups-due",
+      "name": "Call /followups/due",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [-460, 0],
+      "notes": "GET only — eligibility (consent, opt-out/reply/spam, delay elapsed, attempt cap) is decided entirely by packages/business-rules/src/follow-up.ts behind this route, not by this node.",
+      "parameters": {
+        "method": "GET",
+        "url": "http://dashboard:3000/api/internal/followups/due",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ubpcreyVQu2wUYW1",
+          "name": "Internal API Secret"
+        }
+      }
+    },
+    {
+      "id": "split-out-due",
+      "name": "Split Out Due Follow-ups",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [-220, 0],
+      "notes": "The route returns zero or more eligible follow-ups in `body` (an array) — split so the per-item logging below runs once per newly-due follow-up, not once for the whole batch.",
+      "parameters": {
+        "fieldToSplitOut": "body",
+        "options": {}
+      }
+    },
+    {
+      "id": "http-log-event",
+      "name": "Call /events (log follow-up created)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [20, 0],
+      "notes": "A reviewable follow-up draft requires its own approval (FR-029, default policy) — this workflow only ever creates the draft and logs it; it never calls /drafts/{id}/approve or /email/send itself. The dashboard's existing Approval Queue (already generic over any pending_approval ReplyDraft) is where a human approves it, which reuses WF-02 unchanged.",
+      "parameters": {
+        "method": "POST",
+        "url": "http://dashboard:3000/api/internal/events",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ leadId: $json.leadId, workflowName: 'wf-03-follow-up-scheduler', eventType: 'follow_up', status: 'success', safeMetadata: { followUpId: $json.followUpId, attemptNumber: $json.attemptNumber, draftId: $json.draftId, outcome: 'awaiting_approval' } }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ubpcreyVQu2wUYW1",
+          "name": "Internal API Secret"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Call /followups/due",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call /followups/due": {
+      "main": [
+        [
+          {
+            "node": "Split Out Due Follow-ups",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out Due Follow-ups": {
+      "main": [
+        [
+          {
+            "node": "Call /events (log follow-up created)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "YeFyZdpuMbhtC7IH"
+  }
+}

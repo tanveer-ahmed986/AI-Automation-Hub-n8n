@@ -1,0 +1,225 @@
+openapi: 3.0.3
+info:
+  title: Lead Management Hub — Internal API
+  version: 0.1.0
+  description: >
+    Non-public API exposed by the Next.js app, reachable only from inside
+    the Docker Compose network (n8n calls this; the browser never does).
+    Every request MUST include the shared internal secret header; this is
+    defense-in-depth alongside network isolation, per the constitution's
+    least-privilege principle. All request/response bodies are validated
+    against the shared Zod schemas in packages/schemas — this file mirrors
+    those schemas but the Zod schemas are the source of truth at
+    implementation time.
+servers:
+  - url: http://dashboard:3000/api/internal
+    description: Docker Compose internal network address
+security:
+  - internalSecret: []
+components:
+  securitySchemes:
+    internalSecret:
+      type: apiKey
+      in: header
+      name: X-Internal-Api-Secret
+  schemas:
+    LeadIntakeRequest:
+      type: object
+      required: [name, email, message, consent_to_follow_up]
+      properties:
+        name: { type: string, maxLength: 200 }
+        email: { type: string, format: email }
+        company: { type: string, maxLength: 200, nullable: true }
+        message: { type: string, maxLength: 5000 }
+        service: { type: string, maxLength: 100, nullable: true }
+        budget: { type: string, maxLength: 100, nullable: true }
+        timeline: { type: string, maxLength: 100, nullable: true }
+        source: { type: string, maxLength: 50, nullable: true }
+        consent_to_follow_up: { type: boolean }
+        idempotency_key: { type: string, maxLength: 200, nullable: true }
+    LeadIntakeResponse:
+      type: object
+      required: [leadId, deduped, status]
+      properties:
+        leadId: { type: string, format: uuid }
+        deduped:
+          type: boolean
+          description: true if this resolved to an existing lead rather than creating one
+        status:
+          type: string
+          enum: [pending_review, approved, sent, closed, spam]
+    ValidationErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string, description: "Human-readable, safe message — never a stack trace or internal detail" }
+        fields:
+          type: array
+          items: { type: string }
+          description: names of the fields that failed validation, if applicable
+    LeadAnalysisResult:
+      type: object
+      required: [category, intent, summary, urgency, budget_band, lead_score, score_factors, missing_information, recommended_next_action, draft_reply]
+      properties:
+        category: { type: string, enum: [website_development, ai_automation, consulting, other, unknown] }
+        intent: { type: string, enum: [new_project, support, partnership, spam, other, unknown] }
+        summary: { type: string, maxLength: 500 }
+        urgency: { type: string, enum: [low, medium, high, unknown] }
+        budget_band: { type: string, enum: [unknown, under_100, "100_499", "500_999", "1000_plus"] }
+        timeline: { type: string, nullable: true }
+        lead_score: { type: integer, minimum: 0, maximum: 100 }
+        score_factors: { type: array, items: { type: string } }
+        missing_information: { type: array, items: { type: string } }
+        recommended_next_action: { type: string, enum: [approve_reply, request_clarification, manual_review, mark_spam] }
+        draft_reply:
+          type: object
+          required: [subject, body]
+          properties:
+            subject: { type: string, maxLength: 200 }
+            body: { type: string }
+    AnalyzeResponse:
+      type: object
+      required: [leadId, analysisStatus]
+      properties:
+        leadId: { type: string, format: uuid }
+        analysisStatus: { type: string, enum: [completed, failed_manual_review] }
+        analysis:
+          allOf: [{ $ref: "#/components/schemas/LeadAnalysisResult" }]
+          nullable: true
+        draftId: { type: string, format: uuid, nullable: true }
+    EmailSendRequest:
+      type: object
+      required: [draftId, draftVersion]
+      properties:
+        draftId: { type: string, format: uuid }
+        draftVersion: { type: integer, minimum: 1 }
+    EmailSendResponse:
+      type: object
+      required: [status, mock]
+      properties:
+        status: { type: string, enum: [sent, already_sent, rejected_stale_version] }
+        mock: { type: boolean }
+        providerResponseSafe:
+          type: object
+          description: redacted, safe-to-log provider metadata only
+          nullable: true
+    FollowUpEligible:
+      type: object
+      required: [followUpId, leadId, attemptNumber, draftId]
+      properties:
+        followUpId: { type: string, format: uuid }
+        leadId: { type: string, format: uuid }
+        attemptNumber: { type: integer }
+        draftId: { type: string, format: uuid }
+    WorkflowEventRequest:
+      type: object
+      required: [workflowName, eventType, status]
+      properties:
+        leadId: { type: string, format: uuid, nullable: true }
+        workflowName: { type: string }
+        executionReference: { type: string, nullable: true }
+        eventType: { type: string, enum: [intake, analysis, approval, delivery, follow_up, error] }
+        status: { type: string, enum: [success, failed, retrying] }
+        classification: { type: string, enum: [validation, ai_provider, persistence, approval, email_delivery, unexpected], nullable: true }
+        safeMetadata: { type: object, additionalProperties: true }
+paths:
+  /leads/intake:
+    post:
+      summary: Validate, normalize, deduplicate, and persist a new lead (WF-01 step)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LeadIntakeRequest" }
+      responses:
+        "200":
+          description: Lead accepted (new or deduplicated to an existing one)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LeadIntakeResponse" }
+        "400":
+          description: Validation failure — never create a lead record
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ValidationErrorResponse" }
+  /leads/{id}/analyze:
+    post:
+      summary: Run the AI adapter (mock or live), validate output, persist analysis + initial draft (WF-01 step)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: >
+            Analysis completed OR failed-and-routed-to-manual-review — both
+            are 200s with analysisStatus distinguishing them; this endpoint
+            never represents a failed/malformed AI result as a successful one.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AnalyzeResponse" }
+  /drafts/{id}/approve:
+    post:
+      summary: Atomically mark a draft version as approved, or reject the attempt if stale (called from the WF-02 n8n webhook, not directly by the browser)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [draftVersion]
+              properties:
+                draftVersion: { type: integer }
+                reviewerIdentity: { type: string, nullable: true }
+      responses:
+        "200":
+          description: Approval recorded, or rejected as stale if a newer version exists
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [result]
+                properties:
+                  result: { type: string, enum: [approved, stale_version_rejected, already_sent] }
+  /email/send:
+    post:
+      summary: Send (or mock-send) an approved draft or follow-up, exactly once per version (WF-02/WF-03 step)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EmailSendRequest" }
+      responses:
+        "200":
+          description: Delivery outcome (idempotent — repeated calls for an already-sent version return already_sent, never a second send)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EmailSendResponse" }
+  /followups/due:
+    get:
+      summary: List follow-ups currently eligible to send (consent, opt-out, reply, and attempt-cap checks applied) — WF-03 step
+      responses:
+        "200":
+          description: Zero or more eligible follow-ups
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/FollowUpEligible" }
+  /events:
+    post:
+      summary: Record a redacted workflow outcome event (used by WF-04 error handler and by every other workflow's own success/failure logging)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WorkflowEventRequest" }
+      responses:
+        "201":
+          description: Event persisted

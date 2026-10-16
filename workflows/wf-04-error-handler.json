@@ -1,0 +1,63 @@
+{
+  "name": "WF-04 - Error Handler",
+  "nodes": [
+    {
+      "id": "error-trigger",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [-460, 0],
+      "notes": "n8n's native error-workflow mechanism (research.md §4) — fires only when WF-01/02/03 itself crashes (e.g. a genuinely unreachable host), never for a classified failure those workflows already caught and logged themselves via their own /api/internal/* route (analyze, email/send, followups/due all insert their own classified WorkflowEvent before returning). Everything reaching this trigger is therefore always logged as 'unexpected' — if it were a known classification, the originating workflow would have handled it already. Wired to WF-01/02/03 via each workflow's settings.errorWorkflow (set after this workflow is imported and its id is known — see tasks.md T058).",
+      "parameters": {}
+    },
+    {
+      "id": "http-log-error",
+      "name": "Call /events (log unexpected failure)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [-200, 0],
+      "notes": "Redaction (FR-041, including nested stack traces) happens server-side in packages/business-rules/src/error-classification.ts before this is ever persisted — this node sends the full error object deliberately, trusting that shared, unit-tested policy rather than re-implementing redaction in a node expression.",
+      "parameters": {
+        "method": "POST",
+        "url": "http://dashboard:3000/api/internal/events",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ leadId: null, workflowName: $json.workflow.name, executionReference: $json.execution.id, eventType: 'error', status: 'failed', classification: 'unexpected', safeMetadata: { workflowId: $json.workflow.id, executionId: $json.execution.id, lastNodeExecuted: $json.execution.lastNodeExecuted, mode: $json.execution.mode, error: $json.execution.error } }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ubpcreyVQu2wUYW1",
+          "name": "Internal API Secret"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Call /events (log unexpected failure)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

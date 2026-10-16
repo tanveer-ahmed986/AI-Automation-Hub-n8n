@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+*.tsbuildinfo
+
+# Env / secrets
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Test / coverage
+coverage/
+.vitest-cache/
+
+# Docker volumes bind-mounted locally (if any)
+.docker-data/
+
+# n8n local data (never commit real workflow credentials/data)
+.n8n/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+
+# Claude Code / tooling scratch
+.claude/settings.local.json
+
+# Local working scratchpad (may contain session cookies/tokens from local
+# dev — never commit, even for a 127.0.0.1-only demo instance)
+scratchpad/

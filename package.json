@@ -1,0 +1,42 @@
+{
+  "name": "ai-automation-hub-n8n",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Z&T AI Lead Management & Business Automation Hub",
+  "type": "module",
+  "packageManager": "pnpm@11.20.0",
+  "engines": {
+    "node": ">=24.0.0 <25.0.0"
+  },
+  "scripts": {
+    "build": "pnpm --filter=dashboard run build",
+    "lint": "eslint . && pnpm -r run lint",
+    "typecheck": "pnpm -r run typecheck",
+    "test": "vitest run --config vitest.config.ts",
+    "test:watch": "vitest --config vitest.config.ts",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "db:generate": "drizzle-kit generate --config=database/drizzle.config.ts",
+    "db:migrate": "tsx database/migrate.ts",
+    "db:seed": "tsx database/seed/index.ts"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.45.4",
+    "postgres": "^3.4.9"
+  },
+  "devDependencies": {
+    "@automation-hub/adapters": "workspace:*",
+    "@automation-hub/business-rules": "workspace:*",
+    "@automation-hub/schemas": "workspace:*",
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^24.19.2",
+    "dotenv": "^18.0.8",
+    "drizzle-kit": "^0.31.11",
+    "eslint": "^10.12.0",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.9.10",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.71.2",
+    "vitest": "^5.0.5"
+  }
+}
