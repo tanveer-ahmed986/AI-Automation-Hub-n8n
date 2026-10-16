@@ -83,7 +83,18 @@ reading source code. Validation failures are never auto-retried; transient provi
 failures are retried with bounded backoff. Nothing in a logged failure ever contains a raw secret,
 token, or stack trace — see `docs/runbook.md` for the full per-classification guide.
 
-## 4. Screenshots
+## 4. Demo
+
+A short animated walkthrough — lead review → AI analysis (advisory-labeled) → approve & send →
+Execution Log — recorded directly from the running dashboard with fictional seed data:
+
+![Demo](./demo/zt-automation-hub-demo.gif)
+
+Every click in it is real, not staged: the lead shown, its AI analysis, and the resulting
+`delivery` event in the Execution Log are the actual output of the live stack. For a hands-on
+version you can run (and record) yourself, see `docs/manual-testing-guide.md`.
+
+## 5. Screenshots
 
 All screenshots use fictional seed data (`database/seed/leads.ts`) — no real inquiry data ever
 appears here, consistent with the project's data-honesty principle.
@@ -100,7 +111,7 @@ appears here, consistent with the project's data-honesty principle.
 **Execution Log** — classified failures with redacted detail and recovery guidance:
 ![Execution Log](./screenshots/execution-log.jpg)
 
-## 5. System architecture
+## 6. System architecture
 
 ```text
                          ┌─────────────────────────────┐
@@ -143,7 +154,7 @@ Full detail, including the alternatives considered and why: **`docs/architecture
 
 Full node-by-node detail: **`docs/workflow-catalog.md`**.
 
-## 6. Technology stack
+## 7. Technology stack
 
 | Layer | Choice | Why |
 |---|---|---|
@@ -158,7 +169,7 @@ Full node-by-node detail: **`docs/workflow-catalog.md`**.
 
 Full version-pin rationale: `specs/001-lead-management-hub/research.md`.
 
-## 7. Data model (summary)
+## 8. Data model (summary)
 
 Five entities, each mapping 1:1 to a real-world concept — no credentials or secrets stored in any
 of them:
@@ -171,7 +182,7 @@ of them:
 
 Full schema, constraints, and state-transition diagrams: `specs/001-lead-management-hub/data-model.md`.
 
-## 8. Security & compliance highlights
+## 9. Security & compliance highlights
 
 - Every service binds to `127.0.0.1` only — nothing in this stack is reachable from the network
   by default.
@@ -188,7 +199,7 @@ Full schema, constraints, and state-transition diagrams: `specs/001-lead-managem
 
 Full detail: **`docs/security.md`**.
 
-## 9. Testing & quality assurance
+## 10. Testing & quality assurance
 
 | Check | Result |
 |---|---|
@@ -201,7 +212,7 @@ These numbers are re-run, not carried forward from memory — see **`docs/testin
 exact commands and what each suite specifically covers, and **`docs/manual-testing-guide.md`**
 for a hands-on, click-through functional walkthrough you can run (and record) yourself.
 
-## 10. Project scale
+## 11. Project scale
 
 - 46 functional requirements, 9 measurable success criteria (`specs/001-lead-management-hub/spec.md`)
 - ~3,600 lines of first-party TypeScript across the dashboard app and shared packages
@@ -211,7 +222,7 @@ for a hands-on, click-through functional walkthrough you can run (and record) yo
 - 7 phases of spec-driven implementation, each with its own Prompt History Record under
   `history/prompts/001-lead-management-hub/`
 
-## 11. Known limitations (stated honestly, not omitted)
+## 12. Known limitations (stated honestly, not omitted)
 
 - The approval surface is local/demo-only — no reviewer authentication yet (see §8).
 - No inbound-email-reply detection — recording a reply or opt-out is a manual operator action.
@@ -221,7 +232,7 @@ for a hands-on, click-through functional walkthrough you can run (and record) yo
 - No browser-based UI/visual-regression test suite — UI correctness is verified manually each
   phase (see `docs/testing.md` for the reasoning).
 
-## 12. Setup
+## 13. Setup
 
 Full, verified steps (including the genuinely manual n8n first-run setup): **`docs/setup-local.md`**.
 Short version:
@@ -236,7 +247,7 @@ pnpm db:seed
 
 No paid credentials are required for any of the above.
 
-## 13. Document map
+## 14. Document map
 
 | Need to know... | Read |
 |---|---|
@@ -248,4 +259,5 @@ No paid credentials are required for any of the above.
 | Network, secrets, data-minimization, deletion | `docs/security.md` |
 | What to do when the Execution Log shows a failure | `docs/runbook.md` |
 | A scripted narration for a short demo video | `docs/portfolio-demo-script.md` |
+| The actual recorded demo | `docs/demo/zt-automation-hub-demo.gif` |
 | Full original specification | `SPEC.md`, `specs/001-lead-management-hub/spec.md` |

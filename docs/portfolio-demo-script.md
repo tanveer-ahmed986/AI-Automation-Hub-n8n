@@ -7,6 +7,11 @@ IV: "real prospect data MUST NEVER appear in screenshots, seed data, or
 portfolio materials") — every name/email/message below is invented for
 this demo and does not correspond to a real person or business.
 
+**A short recorded walkthrough already exists** at `docs/demo/zt-automation-hub-demo.gif`
+(click-level, no narration) — it covers the lead review → AI analysis → approve & send →
+Execution Log portion of this script (roughly §3–§5 below). This script is for producing a
+longer, narrated version of the same flow.
+
 **Before recording**: run `scripts/demo-reset.sh` (or `.ps1`) to start
 from a known, clean seeded state, and confirm all three containers are
 healthy (`./scripts/health-check.sh`).

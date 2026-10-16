@@ -16,6 +16,8 @@ approval/send, consent-aware follow-ups, and failure investigation/
 recovery. This is a demo/portfolio build, not a production deployment —
 see **Known limitations** below before treating it as one.
 
+![Demo: lead review → AI analysis → approve & send → execution log](./docs/demo/zt-automation-hub-demo.gif)
+
 ## Quick start
 
 ```bash
